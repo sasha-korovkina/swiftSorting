@@ -1,5 +1,4 @@
 import re
-from openpyxl import Workbook
 import win32com.client
 import os
 import pythoncom  # Import pythoncom library
@@ -78,55 +77,28 @@ def execute_macro(file_path):
         app.quit()
 
 def print_first_account_holder(file_path):
-    # Load the Excel file
+    # Load the Excel file into a DataFrame
     df = pd.read_excel(file_path)
+    print(df.head())
+    # Initialize an empty list to store the values after 'AccountHolder'
+    values_after_account_holder = []
 
-    # Assuming column A is named 'A' and column B is named 'B'. Adjust as necessary.
-    column_a = 'Column1'  # Adjust if your DataFrame uses a different label
-    column_b = 'Column2'  # Adjust if your DataFrame uses a different label
+    # Flag to start recording values after we find the first 'AccountHolder'
+    start_appending = False
 
-    # Initialize an empty DataFrame for the results
-    results_df = pd.DataFrame()
+    # Iterate through each value in column 'Column1' (replace 'Column1' with your actual column name if different)
+    for value in df['Column1']:  # Access the column directly by its name
+        if start_appending:
+            values_after_account_holder.append(value)
+        if value == 'AccountHolder':
+            start_appending = True
 
-    # Track the current account holder and the keys found for it
-    current_account_holder = None
-    keys_found = set()
+    # Remove the first 'AccountHolder' from the list
+    if values_after_account_holder and values_after_account_holder[0] == 'AccountHolder':
+        values_after_account_holder = values_after_account_holder[1:]
 
-    # Iterate through each row in the DataFrame
-    for index, row in df.iterrows():
-        # Check for 'AccountHolder' and update the current account holder
-        if row[column_a] == 'AccountHolder':
-            current_account_holder = row[column_b]  # Assuming the account holder's name is in column B
-            keys_found.clear()  # Reset keys for the new account holder
-        else:
-            # Process the key-value pairs
-            key = row[column_a]
-            value = row[column_b]
-
-            # If it's a new key, add a new column for it
-            if key not in keys_found:
-                keys_found.add(key)
-                if key not in results_df.columns:
-                    results_df[key] = np.nan  # Initialize the column with NaNs
-                results_df.at[current_account_holder, key] = value  # Add the value for the current account holder
-            else:
-                # If the key exists, find the first empty cell in its column for the current account holder
-                if current_account_holder in results_df.index:
-                    next_row = results_df[key].isnull().idxmax()  # Get the next available row
-                    if pd.isnull(results_df.at[next_row, key]):
-                        results_df.at[next_row, key] = value  # Insert the value if the cell is empty
-                    else:
-                        # If no empty cell is available, append a new row
-                        new_row = pd.Series(index=[current_account_holder], data={key: value})
-                        results_df = results_df.append(new_row, ignore_index=False)
-                else:
-                    # If the account holder does not exist in the index, simply add the value
-                    results_df.at[current_account_holder, key] = value
-
-    results_df.fillna(value=pd.NA, inplace=True)
-
-    print(results_df)
-
+    # Print the collected values
+    print(values_after_account_holder)
 
 if os.path.exists(folder_path) and os.path.isdir(folder_path):
     files = os.listdir(folder_path)
@@ -143,12 +115,8 @@ if os.path.exists(folder_path) and os.path.isdir(folder_path):
                     if match:
                         isin = match.group(1)
                         print(f"ISIN: {isin}")
-                        wb = Workbook()
-                        ws = wb.active
                         output_file = os.path.join(output_folder, f"{isin}_{file_base_name}.xlsm")
-                        wb.save(output_file)
-                        print(f"Excel file saved for ISIN {isin} at: {output_file}")
-
+                        # print(f"Excel file saved for ISIN {isin} at: {output_file}")
                         inject_macro(output_file, 'loader', file_base_name)
                         execute_macro(output_file)
                         print_first_account_holder(output_file)
