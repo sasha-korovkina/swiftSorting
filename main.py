@@ -1,16 +1,25 @@
 import re
 import win32com.client
 import os
-import pythoncom  # Import pythoncom library
+import pythoncom
 import xlwings as xw
 import pandas as pd
 import numpy as np
+import psutil
 
-folder_path = r"M:\CDB\Swift\AllianceLiteMessages"
+folder_path = r"M:\CDB\Swift\AllianceLiteMessages\Messages"
 output_folder = r"M:\CDB\Swift\AllianceLiteMessages\Processed Excels"
 
-def inject_macro(excel_file_path, macro_name, file_base_name):
-    print(file_base_name)
+def kill_excel_processes():
+    for process in psutil.process_iter(['pid', 'name']):
+        # Check if the process name is Excel
+        if 'EXCEL.EXE' in process.info['name'].upper():
+            print(f"Terminating Excel process {process.info['pid']}...")
+            psutil.Process(process.info['pid']).kill()
+
+
+def inject_macro(macro_name, file_base_name, output_file):
+    print('File name is : ' + file_base_name)
     macro_code = f'''
                     Sub getData()
                     '
@@ -42,23 +51,35 @@ def inject_macro(excel_file_path, macro_name, file_base_name):
                             .Refresh BackgroundQuery:=False
                         End With
                     End Sub
-            '''
+                    '''
 
-    pythoncom.CoInitialize()
+    try:
+        # Call this function before initializing Excel with win32com
+        kill_excel_processes()
 
-    com_instance = win32com.client.Dispatch("Excel.Application")
-    com_instance.Visible = False
-    com_instance.DisplayAlerts = False
+        # Proceed with your existing code to inject macros
+        pythoncom.CoInitialize()
+        excel_app = win32com.client.Dispatch("Excel.Application")
+        # Make sure to set Visible to True if you want to see the Excel application
+        excel_app.Visible = False
+        workbook = excel_app.Workbooks.Add()
 
-    workbook = com_instance.Workbooks.Add()
-    xlmodule = workbook.VBProject.VBComponents.Add(1)
-    xlmodule.Name = macro_name  # Set the name of the module
-    xlmodule.CodeModule.AddFromString(macro_code)
-    workbook.SaveAs(Filename=excel_file_path, FileFormat=52)
-    workbook.Close()
-    com_instance.Quit()
+        # Adding the macro to the workbook
+        xlmodule = workbook.VBProject.VBComponents.Add(1)  # 1 corresponds to vbext_ct_StdModule, a standard module
+        xlmodule.Name = macro_name
+        xlmodule.CodeModule.AddFromString(macro_code)
 
-    pythoncom.CoUninitialize()
+        # Save the workbook with the injected macro at the specified path
+        workbook.SaveAs(Filename=output_file, FileFormat=52)  # 52 = xlOpenXMLWorkbookMacroEnabled (.xlsm)
+        workbook.Close(False)
+        excel_app.Quit()
+        pythoncom.CoUninitialize()
+        print(f"Workbook saved successfully at: {output_file}")
+    except Exception as e:
+        print(f"An error occurred: {e}")
+    finally:
+        pythoncom.CoUninitialize()
+
 
 def execute_macro(file_path):
     app = xw.App(visible=False)  # Ensure Excel opens in the background
@@ -80,25 +101,30 @@ def print_first_account_holder(file_path):
     # Load the Excel file into a DataFrame
     df = pd.read_excel(file_path)
     print(df.head())
-    # Initialize an empty list to store the values after 'AccountHolder'
-    values_after_account_holder = []
 
-    # Flag to start recording values after we find the first 'AccountHolder'
+    # Dictionary to hold the {key: value} pairs
+    account_holder_data = {}
+    current_key = None
+
     start_appending = False
 
-    # Iterate through each value in column 'Column1' (replace 'Column1' with your actual column name if different)
-    for value in df['Column1']:  # Access the column directly by its name
+    for index, row in df.iterrows():  # Use iterrows to access both columns
+        key, value = row['Column1'], row['Column2']
+        print(key)
+        print(value)
+
         if start_appending:
-            values_after_account_holder.append(value)
-        if value == 'AccountHolder':
+            if key == 'AccountHolder':
+                break
+            account_holder_data[key] = value  # Append the key-value pair
+        elif key == 'AccountHolder':
             start_appending = True
+            current_key = value
 
-    # Remove the first 'AccountHolder' from the list
-    if values_after_account_holder and values_after_account_holder[0] == 'AccountHolder':
-        values_after_account_holder = values_after_account_holder[1:]
+    print(f"Data for AccountHolder {current_key}:")
+    for key, value in account_holder_data.items():
+        print(f"{key}: {value}")
 
-    # Print the collected values
-    print(values_after_account_holder)
 
 if os.path.exists(folder_path) and os.path.isdir(folder_path):
     files = os.listdir(folder_path)
@@ -116,10 +142,9 @@ if os.path.exists(folder_path) and os.path.isdir(folder_path):
                         isin = match.group(1)
                         print(f"ISIN: {isin}")
                         output_file = os.path.join(output_folder, f"{isin}_{file_base_name}.xlsm")
-                        # print(f"Excel file saved for ISIN {isin} at: {output_file}")
-                        inject_macro(output_file, 'loader', file_base_name)
+                        inject_macro('loader', file_base_name, output_file)
                         execute_macro(output_file)
-                        print_first_account_holder(output_file)
+                        #print_first_account_holder(output_file)
 
 else:
     print("The specified directory does not exist or is not a directory.")
