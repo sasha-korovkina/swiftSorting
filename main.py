@@ -3,9 +3,10 @@ import win32com.client
 import os
 import pythoncom
 import xlwings as xw
-import pandas as pd
-import numpy as np
 import psutil
+import pandas as pd
+from openpyxl import load_workbook
+from openpyxl.utils.dataframe import dataframe_to_rows
 
 folder_path = r"M:\CDB\Swift\AllianceLiteMessages\Messages"
 output_folder = r"M:\CDB\Swift\AllianceLiteMessages\Processed Excels"
@@ -16,7 +17,6 @@ def kill_excel_processes():
         if 'EXCEL.EXE' in process.info['name'].upper():
             print(f"Terminating Excel process {process.info['pid']}...")
             psutil.Process(process.info['pid']).kill()
-
 
 def inject_macro(macro_name, file_base_name, output_file):
     print('File name is : ' + file_base_name)
@@ -80,7 +80,6 @@ def inject_macro(macro_name, file_base_name, output_file):
     finally:
         pythoncom.CoUninitialize()
 
-
 def execute_macro(file_path):
     app = xw.App(visible=False)  # Ensure Excel opens in the background
     wb = app.books.open(file_path)
@@ -126,6 +125,39 @@ def print_first_account_holder(file_path):
         print(f"{key}: {value}")
 
 
+import pandas as pd
+
+def transpose_to_new_sheet(source_excel_path, source_sheet_name, output_sheet_name,
+                           column_names=['Column1', 'Column2']):
+    # Load the DataFrame from the source Excel file and specified sheet
+    df = pd.read_excel(source_excel_path, sheet_name=source_sheet_name, usecols=column_names)
+
+    # Transpose the DataFrame and reset the index
+    transposed_df = df.T.reset_index(drop=True)
+    transposed_df.columns = range(transposed_df.shape[1])
+
+    # Open the workbook
+    app = xw.App(visible=False)  # Keep Excel app in background
+    workbook = app.books.open(source_excel_path)
+
+    # Check if the output sheet exists and delete it if so
+    sheet_names = [sheet.name for sheet in workbook.sheets]
+    if output_sheet_name in sheet_names:
+        workbook.sheets[output_sheet_name].delete()
+
+    # Add a new sheet for the transposed DataFrame
+    sheet = workbook.sheets.add(name=output_sheet_name, after=len(workbook.sheets))
+
+    # Write the transposed DataFrame to the new sheet
+    sheet.range('A1').value = transposed_df
+
+    # Save and close the workbook
+    workbook.save()
+    workbook.close()
+    app.quit()  # Ensure the Excel application is properly closed
+
+    print(f"Table transposed and saved to new sheet '{output_sheet_name}' successfully.")
+
 if os.path.exists(folder_path) and os.path.isdir(folder_path):
     files = os.listdir(folder_path)
 
@@ -144,6 +176,8 @@ if os.path.exists(folder_path) and os.path.isdir(folder_path):
                         output_file = os.path.join(output_folder, f"{isin}_{file_base_name}.xlsm")
                         inject_macro('loader', file_base_name, output_file)
                         execute_macro(output_file)
+                        transpose_to_new_sheet(output_file, 'Sheet2', 'TRANS', ['Column1', 'Column2'])
+
                         #print_first_account_holder(output_file)
 
 else:
