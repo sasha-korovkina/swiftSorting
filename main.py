@@ -124,9 +124,6 @@ def print_first_account_holder(file_path):
     for key, value in account_holder_data.items():
         print(f"{key}: {value}")
 
-
-import pandas as pd
-
 def transpose_to_new_sheet(source_excel_path, source_sheet_name, output_sheet_name,
                            column_names=['Column1', 'Column2']):
     # Load the DataFrame from the source Excel file and specified sheet
